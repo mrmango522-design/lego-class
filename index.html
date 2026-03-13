@@ -276,7 +276,7 @@
                 </div>
 
                 <div id="voice-section">
-                    <h3 style="margin-top:0; color:#166534;">🎤 語音控制 (支援廣東話)</h3>
+                    <h3 style="margin-top:0; color:#166534;">🎤 語音控制 (強制廣東話)</h3>
                     <button class="btn-orange-small" id="mic-btn" onclick="startVoiceRecognition()" style="width: 100%;">🎙️ 開始錄音 (限時5秒)</button>
                     <p id="voice-result" style="font-weight:bold; color:#15803D; margin-bottom:0; margin-top:10px;">錄音結果: 無</p>
                 </div>
@@ -493,7 +493,7 @@
         }
     }
 
-    // --- 語音辨識功能 (Web Speech API) ---
+    // --- 語音辨識功能 (Web Speech API) 修正為強制廣東話 ---
     function startVoiceRecognition() {
         const btn = document.getElementById("mic-btn");
         const resText = document.getElementById("voice-result");
@@ -504,11 +504,14 @@
         }
 
         const recognition = new webkitSpeechRecognition();
-        recognition.lang = 'zh-HK'; // 廣東話
+        
+        // ⚠️ 關鍵修改：強制指定粵語 (廣東話) 代碼
+        recognition.lang = 'yue-Hant-HK'; 
+        
         recognition.interimResults = false;
         recognition.maxAlternatives = 1;
 
-        btn.innerText = "🎙️ 錄音中...請說出零件名稱";
+        btn.innerText = "🎙️ 錄音中...請用廣東話講出零件名稱";
         btn.style.background = "linear-gradient(180deg, #F87171, #EF4444)";
 
         const stopTimer = setTimeout(() => {
