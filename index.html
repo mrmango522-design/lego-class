@@ -203,8 +203,8 @@
         .status-box {
             background: white;
             border-radius: 8px;
-            padding: 10px;
-            margin-bottom: 8px;
+            padding: 8px 10px;
+            margin-bottom: 6px;
             display: flex;
             justify-content: space-between;
             font-size: 0.9em;
@@ -243,8 +243,6 @@
             margin-top: 15px;
             text-align: center;
         }
-
-        .hidden { display: none !important; }
 
     </style>
 </head>
@@ -312,8 +310,12 @@
                     <span class="status-value red" id="gs-status">等待中</span>
                 </div>
                 <div class="status-box">
-                    <span>⏳ 傳送冷卻時間</span>
-                    <span class="status-value" id="cooldown-timer">0.0 s</span>
+                    <span>⏳ MB 冷卻 (8s)</span>
+                    <span class="status-value" id="mb-cooldown-timer">0.0 s</span>
+                </div>
+                <div class="status-box">
+                    <span>⏳ GS 冷卻 (5s)</span>
+                    <span class="status-value" id="gs-cooldown-timer">0.0 s</span>
                 </div>
 
             </div>
@@ -322,7 +324,6 @@
 
 <script>
     // --- 系統設定 ---
-    // ✅ 已經替換為你專屬的 Web App URL
     const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbyBn29BbILGBQzNsKvMRCSCG5SfrqraJcz9O4JAnk5swr7I5RLcnnD91ZqFjkvU0cHf/exec"; 
     
     // --- 全域變數 ---
@@ -345,8 +346,11 @@
         "背景": { count: 0, confidence: 0, mCode: null, tCode: null }
     };
 
-    let lastSendTime = 0;
-    const COOLDOWN_MS = 5000;
+    // 分離 Micro:bit 和 Google Sheet 的冷卻時間控制
+    let lastMicrobitSendTime = 0;
+    let lastSheetSendTime = 0;
+    const MICROBIT_COOLDOWN_MS = 8000; // Micro:bit 8秒
+    const SHEET_COOLDOWN_MS = 5000;    // Google Sheet 5秒
 
     // --- 初始化 ---
     async function setup() {
@@ -461,7 +465,7 @@
             if (bestClass !== "背景" && highestConf > 0.6) {
                 resText.innerText = `結果：看見 [${bestClass}] (${(highestConf*100).toFixed(0)}%)`;
                 resText.style.color = "#059669"; 
-                // 影像辨識模式下，數量傳送 1
+                // 觸發動作 (影像模式: 數量為 1)
                 triggerActions(bestClass, classData[bestClass].mCode, 1);
             } else {
                 resText.innerText = `結果：背景 / 辨識中...`;
@@ -523,7 +527,7 @@
 
             if (matchedClass) {
                 resText.innerText = `錄音結果: ${transcript} -> 提取 [${matchedClass}]`;
-                // 語音提取模式下，數量傳送 -1
+                // 觸發動作 (語音模式: 數量為 -1)
                 triggerActions(matchedClass, classData[matchedClass].tCode, -1);
             } else {
                 resText.innerText = `錄音結果: ${transcript} (未配對)`;
@@ -538,14 +542,21 @@
         recognition.start();
     }
 
-    // --- 動作觸發 (Microbit & Google Sheets) 加入數量參數 ---
+    // --- 動作觸發 (獨立判斷 Micro:bit 與 Sheet 的冷卻) ---
     function triggerActions(className, microbitCode, quantity) {
         const now = Date.now();
-        if (now - lastSendTime < COOLDOWN_MS) return; 
-        lastSendTime = now;
 
-        sendToMicrobit(microbitCode);
-        sendToGoogleSheets(className, quantity);
+        // 檢查並觸發 Micro:bit (8秒冷卻)
+        if (now - lastMicrobitSendTime >= MICROBIT_COOLDOWN_MS) {
+            sendToMicrobit(microbitCode);
+            lastMicrobitSendTime = now;
+        }
+
+        // 檢查並觸發 Google Sheet (5秒冷卻)
+        if (now - lastSheetSendTime >= SHEET_COOLDOWN_MS) {
+            sendToGoogleSheets(className, quantity);
+            lastSheetSendTime = now;
+        }
     }
 
     // --- Web Serial API (Micro:bit 連接) ---
@@ -577,7 +588,7 @@
         }
     }
 
-    // --- Google Sheets API (透過 Apps Script) 加入數量變數 ---
+    // --- Google Sheets API ---
     function sendToGoogleSheets(blockType, quantity) {
         const statusEl = document.getElementById("gs-status");
         if(GOOGLE_SHEET_URL === "你的_GOOGLE_APPS_SCRIPT_WEB_APP_URL"){
@@ -600,7 +611,7 @@
                 date: dateStr,
                 time: timeStr,
                 blockType: blockType,
-                quantity: quantity // 將 1 或是 -1 傳送出去
+                quantity: quantity 
             })
         }).then(() => {
             statusEl.innerText = `成功寫入 (${blockType}, 數量:${quantity})`;
@@ -611,18 +622,21 @@
         });
     }
 
-    // --- 狀態列與冷卻更新 ---
+    // --- 狀態列與雙冷卻更新 ---
     function updateCooldownUI() {
         const now = Date.now();
-        const remain = Math.max(0, COOLDOWN_MS - (now - lastSendTime));
-        const timerEl = document.getElementById("cooldown-timer");
-        timerEl.innerText = (remain / 1000).toFixed(1) + " s";
         
-        if(remain === 0) {
-            timerEl.style.color = "#059669"; 
-        } else {
-            timerEl.style.color = "#EF4444"; 
-        }
+        // Micro:bit 冷卻 UI
+        const mbRemain = Math.max(0, MICROBIT_COOLDOWN_MS - (now - lastMicrobitSendTime));
+        const mbTimerEl = document.getElementById("mb-cooldown-timer");
+        mbTimerEl.innerText = (mbRemain / 1000).toFixed(1) + " s";
+        mbTimerEl.style.color = mbRemain === 0 ? "#059669" : "#EF4444";
+
+        // Google Sheet 冷卻 UI
+        const gsRemain = Math.max(0, SHEET_COOLDOWN_MS - (now - lastSheetSendTime));
+        const gsTimerEl = document.getElementById("gs-cooldown-timer");
+        gsTimerEl.innerText = (gsRemain / 1000).toFixed(1) + " s";
+        gsTimerEl.style.color = gsRemain === 0 ? "#059669" : "#EF4444";
     }
 </script>
 </body>
